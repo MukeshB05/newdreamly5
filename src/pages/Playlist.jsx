@@ -5,7 +5,6 @@ import Navigator from "../components/Navigator";
 import { genreData } from "../genreData";
 import he from "he";
 import { searchPlayListByQuery } from "../../fetch";
-import { searchPlayListByQuery } from "../../fetch";
 import {
   MdOutlineKeyboardArrowLeft,
   MdOutlineKeyboardArrowRight,
