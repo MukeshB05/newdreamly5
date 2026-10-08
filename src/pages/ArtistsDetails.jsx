@@ -9,7 +9,6 @@ import Navigator from "../components/Navigator";
 import ArtistItems from "../components/Items/ArtistItems";
 import { IoMdArrowRoundBack } from "react-icons/io";
 import { fetchArtistByID } from "../../fetch";
-import { fetchArtistByID } from "../../fetch";
 
 const ArtistsDetails = () => {
   const { id } = useParams(); // Extract the artist ID from the URL
