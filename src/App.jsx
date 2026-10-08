@@ -28,6 +28,8 @@ import he from "he";
 import { fetchSyncedLyrics } from "./lyrics";
 
 import { IoIosCheckmarkCircle } from "react-icons/io";
+import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
 /* ---------------------------------------
    URL HELPERS
