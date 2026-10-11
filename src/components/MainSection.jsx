@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   fetchplaylistsByID,
-  getSearchData,
   searchAlbumByQuery,
   searchPlayListByQuery,
 } from "../../fetch";
@@ -28,8 +27,7 @@ const CACHE_TIME = 5 * 60 * 1000; // 5 minutes
 const CACHE_KEYS = {
   trending: "musicmax_main_trending",
   latest: "musicmax_main_latest",
-  // v2 prevents old empty/invalid cached responses from hiding fixed API data.
-  albums: "musicmax_main_albums_v2",
+  albums: "musicmax_main_albums",
   tamilPlaylists: "musicmax_main_tamil_playlists_v1",
   malayalamPlaylists: "musicmax_main_malayalam_playlists_v1",
 };
@@ -99,29 +97,18 @@ const normalizeArray = (value) => {
   return Array.isArray(value) ? value : [];
 };
 
-// ============================================================
-// API RESULT HELPERS
-// ============================================================
-
-const getResultArray = (response, type) => {
-  const data = response?.data ?? response;
-
+const extractResults = (response) => {
   const candidates = [
-    data?.results,
-    data?.[type]?.results,
-    data?.[type],
-    data?.data?.results,
-    data?.data?.[type]?.results,
-    data?.data?.[type],
+    response?.data?.results,
     response?.results,
-    response?.[type]?.results,
-    response?.[type],
+    response?.data?.data?.results,
+    response?.data?.data,
+    response?.data?.playlists,
+    response?.playlists,
   ];
 
-  for (const candidate of candidates) {
-    if (Array.isArray(candidate)) {
-      return candidate;
-    }
+  for (const value of candidates) {
+    if (Array.isArray(value)) return value;
   }
 
   return [];
@@ -130,20 +117,21 @@ const getResultArray = (response, type) => {
 const uniqueById = (items) => {
   const seen = new Set();
 
-  return items.filter((item) => {
-    const id = item?.id ?? item?.albumId ?? item?.playlistId;
+  return normalizeArray(items).filter((item) => {
+    const key =
+      item?.id ??
+      item?.playlistId ??
+      item?.albumId ??
+      item?.url ??
+      item?.perma_url ??
+      item?.permaUrl;
 
-    if (id === undefined || id === null || String(id).trim() === "") {
-      return false;
-    }
+    if (key == null) return true;
 
-    const key = String(id);
+    const normalizedKey = String(key);
+    if (seen.has(normalizedKey)) return false;
 
-    if (seen.has(key)) {
-      return false;
-    }
-
-    seen.add(key);
+    seen.add(normalizedKey);
     return true;
   });
 };
@@ -431,7 +419,7 @@ const MainSection = () => {
   }, []);
 
   // ==========================================================
-  // LOAD TOP ALBUMS
+  // LOAD ALBUMS
   // ==========================================================
 
   useEffect(() => {
@@ -439,54 +427,35 @@ const MainSection = () => {
 
     const loadAlbums = async () => {
       try {
-        // Do NOT send "Tamil, Malayalam" as one query.
-        // Search each language separately and merge the results.
-        const responses = await Promise.allSettled([
-          searchAlbumByQuery("Tamil", 100),
-          searchAlbumByQuery("Malayalam", 100),
-        ]);
-
-        let results = responses.flatMap((result) =>
-          result.status === "fulfilled"
-            ? getResultArray(result.value, "albums")
-            : []
-        );
-
-        // Fallback to the global search endpoint if the dedicated
-        // album endpoint returns an unexpected/empty response.
-        if (results.length === 0) {
-          const fallback = await Promise.allSettled([
-            getSearchData("Tamil", 100),
-            getSearchData("Malayalam", 100),
-          ]);
-
-          results = fallback.flatMap((result) =>
-            result.status === "fulfilled"
-              ? getResultArray(result.value, "albums")
-              : []
+        const response =
+          await searchAlbumByQuery(
+            "Tamil, Malayalam"
           );
-        }
-
-        results = uniqueById(results);
 
         if (!mounted) {
           return;
         }
 
+        const results = uniqueById(extractResults(response));
+
         setAlbums(results);
-        writeCache(CACHE_KEYS.albums, results);
-
-        if (results.length === 0) {
-          setError((previous) =>
-            previous || "Unable to load some music data."
-          );
-        }
+        writeCache(
+          CACHE_KEYS.albums,
+          results
+        );
       } catch (err) {
-        console.error("Albums API Error:", err);
+        console.error(
+          "Albums API Error:",
+          err
+        );
 
-        if (mounted && albums.length === 0) {
+        if (
+          mounted &&
+          albums.length === 0
+        ) {
           setError((previous) =>
-            previous || "Unable to load some music data."
+            previous ||
+            "Unable to load some music data."
           );
         }
       } finally {
@@ -512,40 +481,23 @@ const MainSection = () => {
 
     const loadTamilPlaylists = async () => {
       try {
-        const response = await searchPlayListByQuery("Tamil", 100);
-        let results = getResultArray(response, "playlists");
-
-        // Fallback to global search if the dedicated playlist endpoint
-        // returns an empty or unexpected response shape.
-        if (results.length === 0) {
-          const fallback = await getSearchData("Tamil", 100);
-          results = getResultArray(fallback, "playlists");
-        }
-
-        results = uniqueById(results);
+        const response = await searchPlayListByQuery("Tamil");
+        const results = uniqueById(extractResults(response));
 
         if (!mounted) return;
 
         setTamilPlaylists(results);
         writeCache(CACHE_KEYS.tamilPlaylists, results);
-
-        if (results.length === 0) {
-          setError((previous) =>
-            previous || "Unable to load Tamil playlists."
-          );
-        }
       } catch (err) {
         console.error("Tamil Playlists API Error:", err);
 
         if (mounted && tamilPlaylists.length === 0) {
           setError((previous) =>
-            previous || "Unable to load Tamil playlists."
+            previous || "Unable to load some music data."
           );
         }
       } finally {
-        if (mounted) {
-          setTamilPlaylistsLoading(false);
-        }
+        if (mounted) setTamilPlaylistsLoading(false);
       }
     };
 
@@ -565,40 +517,23 @@ const MainSection = () => {
 
     const loadMalayalamPlaylists = async () => {
       try {
-        const response = await searchPlayListByQuery("Malayalam", 100);
-        let results = getResultArray(response, "playlists");
-
-        // Fallback to global search if the dedicated playlist endpoint
-        // returns an empty or unexpected response shape.
-        if (results.length === 0) {
-          const fallback = await getSearchData("Malayalam", 100);
-          results = getResultArray(fallback, "playlists");
-        }
-
-        results = uniqueById(results);
+        const response = await searchPlayListByQuery("Malayalam");
+        const results = uniqueById(extractResults(response));
 
         if (!mounted) return;
 
         setMalayalamPlaylists(results);
         writeCache(CACHE_KEYS.malayalamPlaylists, results);
-
-        if (results.length === 0) {
-          setError((previous) =>
-            previous || "Unable to load Malayalam playlists."
-          );
-        }
       } catch (err) {
         console.error("Malayalam Playlists API Error:", err);
 
         if (mounted && malayalamPlaylists.length === 0) {
           setError((previous) =>
-            previous || "Unable to load Malayalam playlists."
+            previous || "Unable to load some music data."
           );
         }
       } finally {
-        if (mounted) {
-          setMalayalamPlaylistsLoading(false);
-        }
+        if (mounted) setMalayalamPlaylistsLoading(false);
       }
     };
 
@@ -1159,6 +1094,7 @@ const MainSection = () => {
           </p>
         )}
       </section>
+
     </main>
   );
 };
